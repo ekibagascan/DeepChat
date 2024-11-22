@@ -1,0 +1,35 @@
+name: deepchat_app
+description: A Flutter chatbot application with subscription system.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  http: ^1.1.0
+  flutter_inappwebview: ^5.7.2
+  supabase_flutter: ^1.10.25
+  provider: ^6.0.5
+  shared_preferences: ^2.2.2
+  intl: ^0.18.1
+  flutter_dotenv: ^5.1.0
+  image_picker: ^1.0.4
+  path: ^1.8.3
+  file_picker: ^6.1.1
+  mime: ^1.0.4
+  url_launcher: ^6.2.4
+  open_file: ^3.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
