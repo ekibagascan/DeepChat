@@ -7,6 +7,14 @@ class AuthService extends ChangeNotifier {
 
   User? get currentUser => _currentUser;
 
+  AuthService() {
+    // Listen to auth state changes
+    _supabase.auth.onAuthStateChange.listen((data) {
+      _currentUser = data.session?.user;
+      notifyListeners();
+    });
+  }
+
   Future<void> signUp({required String email, required String password}) async {
     try {
       final response = await _supabase.auth.signUp(
@@ -31,6 +39,12 @@ class AuthService extends ChangeNotifier {
     } catch (e) {
       rethrow;
     }
+  }
+
+  // Add this method to update current user
+  void updateCurrentUser(User user) {
+    _currentUser = user;
+    notifyListeners();
   }
 
   Future<void> signOut() async {

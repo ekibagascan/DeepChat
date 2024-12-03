@@ -1,11 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../api/deepseek_api.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/chat_sidebar.dart';
-import 'package:image_picker/image_picker.dart';
-import 'dart:io';
+import '../services/auth_service.dart';
+import '../providers/chat_provider.dart';
 import '../services/storage_service.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import '../models/chat_history.dart';
+import '../widgets/custom_app_bar.dart';
+import '../widgets/chat_input_section.dart';
+import '../widgets/new_chat_button.dart';
+
+// Add these color constants at the top of the file
+const kLightGray = Color(0xFFF8F9FB);
+const kPlaceholderGray = Color(0xFFC4C4C4);
+const kDarkGray = Color(0xFF505050);
+const kIndigo = Color(0xFF6366F1);
+const kLightIndigo = Color(0xFFEEF4FF);
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -16,270 +30,489 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateMixin {
   final _messageController = TextEditingController();
-  final _messages = <Map<String, String>>[];
   final _deepSeekAPI = DeepSeekAPI();
   bool _isLoading = false;
+  bool _isAIResponding = false;
   int _selectedChatId = 0;
-  late AnimationController _animationController;
-  late Animation<double> _animation;
-  bool _isSidebarVisible = true;
+  bool _isNewChat = true;
   final _storageService = StorageService();
   final _picker = ImagePicker();
+  final ScrollController _scrollController = ScrollController();
+  bool _isSendEnabled = false;
+  FileUploadState? _uploadedFile;
+  bool _isUploading = false;
+  bool _uploadCancelled = false;
 
-  // Sample chat history data
-  final List<ChatHistory> _chatHistory = [
-    ChatHistory(
-      id: 1,
-      title: "Flutter Development Discussion",
-      date: DateTime.now(),
-    ),
-    ChatHistory(
-      id: 2,
-      title: "API Integration Help",
-      date: DateTime.now().subtract(const Duration(days: 1)),
-    ),
-    ChatHistory(
-      id: 3,
-      title: "Database Design",
-      date: DateTime.now().subtract(const Duration(days: 5)),
-    ),
-  ];
+  void _handleStopResponse() {
+    setState(() {
+      _isAIResponding = false;
+    });
+    context.read<ChatProvider>().stopAIResponse();
+  }
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _animation = CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    );
-    _animationController.forward();
+    _messageController.addListener(() {
+      setState(() {
+        _isSendEnabled = _messageController.text.isNotEmpty;
+      });
+    });
+
+    // Load chat history when screen initializes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final userId = context.read<AuthService>().currentUser?.id;
+      if (userId != null) {
+        context.read<ChatProvider>().loadChatHistory(userId);
+      }
+    });
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     _messageController.dispose();
     super.dispose();
   }
 
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarVisible = !_isSidebarVisible;
-      if (_isSidebarVisible) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
-  }
-
   Future<void> _sendMessage() async {
-    if (_messageController.text.isEmpty) return;
+    if (_messageController.text.isEmpty && _uploadedFile == null) return;
+    if (_isUploading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please wait for file upload to complete')),
+      );
+      return;
+    }
 
-    final userMessage = _messageController.text;
-    setState(() {
-      _messages.add({'role': 'user', 'content': userMessage});
-      _isLoading = true;
-    });
+    final message = _messageController.text;
+    final fileToSend = _uploadedFile;  // Store reference before clearing
+    
+    // Clear input immediately
     _messageController.clear();
 
     try {
-      final response = await _deepSeekAPI.sendMessage(userMessage);
-      setState(() {
-        _messages.add({'role': 'assistant', 'content': response});
-      });
+      final userId = context.read<AuthService>().currentUser?.id;
+      if (userId == null) {
+        debugPrint('No user ID found');
+        return;
+      }
+
+      final chatProvider = context.read<ChatProvider>();
+
+      // Create new chat if needed
+      if (chatProvider.currentChatId == null) {
+        await chatProvider.createNewChat(
+          userId, 
+          message.isNotEmpty ? message : 'Sent a file',
+          fileUrl: fileToSend?.previewUrl,
+          mimeType: fileToSend?.mimeType,
+          fileName: fileToSend?.fileName,
+        );
+      } else {
+        // Only send message if not creating a new chat
+        await chatProvider.sendMessage(
+          message.isNotEmpty ? message : 'Sent a file',
+          fileUrl: fileToSend?.previewUrl,
+          mimeType: fileToSend?.mimeType,
+          fileName: fileToSend?.fileName,
+        );
+      }
+
+      // Clear attachment immediately after sending message
+      if (mounted) {
+        setState(() {
+          _isNewChat = false;
+          _uploadedFile = null;
+        });
+      }
+
+      debugPrint('Message sent successfully');
+      _scrollToBottom();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
-    } finally {
-      setState(() => _isLoading = false);
+      debugPrint('Error sending message: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
     }
   }
 
   void _handleChatSelected(String chatId) {
+    final chatProvider = context.read<ChatProvider>();
+    chatProvider.loadMessages(chatId);
     setState(() {
-      _selectedChatId = int.parse(chatId);
-      // For mobile devices, hide sidebar after selection
-      if (MediaQuery.of(context).size.width < 600) {
-        _toggleSidebar();
-      }
+      _selectedChatId = int.tryParse(chatId) ?? 0;
+      _isNewChat = false;
     });
   }
 
   Future<void> _handleImageSelection() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    
-    if (image != null) {
-      setState(() => _isLoading = true);
+    try {
+      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
       
-      try {
-        final imageFile = File(image.path);
-        final userId = context.read<AuthService>().currentUser!.id;
-        
-        // Upload image
-        final imageUrl = await _storageService.uploadImage(imageFile, userId);
-        
-        // Send message with image
-        await context.read<ChatProvider>().sendMessage(
-          'Sent an image',
-          imageUrl: imageUrl,
-        );
-      } catch (e) {
+      if (image != null) {
+        final file = File(image.path);
+        setState(() {
+          _isUploading = true;
+          _uploadCancelled = false;
+          _uploadedFile = FileUploadState(
+            fileName: image.name,
+            fileSize: file.lengthSync(),
+            previewUrl: image.path,
+            mimeType: 'image/jpeg',
+            onRemove: () async {
+              if (_isUploading) {
+                setState(() {
+                  _uploadCancelled = true;
+                  _uploadedFile = null;
+                });
+              } else {
+                setState(() => _uploadedFile = null);
+              }
+            },
+          );
+        });
+
+        // Start upload process
+        await _processFile(file, null);
+      }
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send image: $e')),
+          SnackBar(content: Text('Error selecting image: $e')),
         );
-      } finally {
-        setState(() => _isLoading = false);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
       }
     }
   }
 
-  Future<void> _handleFileSelection() async {
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: false,
-      type: FileType.any,
-    );
-    
-    if (result != null && result.files.single.path != null) {
-      setState(() => _isLoading = true);
+  Future<void> _handleCameraCapture() async {
+    try {
+      debugPrint('Starting camera capture...');
+      final XFile? photo = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 70,
+      );
       
-      try {
-        final file = File(result.files.single.path!);
-        final userId = context.read<AuthService>().currentUser!.id;
-        
-        // Upload file
-        final fileResult = await _storageService.uploadFile(file, userId);
-        
-        // Send message with file
-        final displayName = fileResult.fileName.length > 20 
-            ? '${fileResult.fileName.substring(0, 17)}...' 
-            : fileResult.fileName;
-            
-        await context.read<ChatProvider>().sendMessage(
-          'Sent a file: $displayName',
-          fileUrl: fileResult.url,
-          mimeType: fileResult.mimeType,
-          fileName: fileResult.fileName,
-        );
-      } catch (e) {
+      if (photo != null) {
+        debugPrint('Photo captured: ${photo.path}');
+        await _processFile(File(photo.path));
+      } else {
+        debugPrint('No photo captured');
+      }
+    } catch (e) {
+      debugPrint('Error capturing photo: $e');
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send file: $e')),
+          SnackBar(content: Text('Error capturing photo: $e')),
         );
-      } finally {
-        setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _handleFilePicker() async {
+    try {
+      debugPrint('Starting file picker...');
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        type: FileType.any,
+      );
+      
+      if (result != null && result.files.single.path != null) {
+        debugPrint('File selected: ${result.files.single.path}');
+        await _processFile(File(result.files.single.path!));
+      } else {
+        debugPrint('No file selected');
+      }
+    } catch (e) {
+      debugPrint('Error picking file: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error selecting file: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _processFile(File file, [String? message]) async {
+    setState(() {
+      _isUploading = true;
+      _uploadCancelled = false;
+      // Set a temporary upload state to show loading
+      _uploadedFile = FileUploadState(
+        fileName: file.path.split('/').last,
+        fileSize: file.lengthSync(),
+        previewUrl: null,  // Will be updated after upload
+        mimeType: file.path.toLowerCase().endsWith('.jpg') || file.path.toLowerCase().endsWith('.jpeg') 
+          ? 'image/jpeg' 
+          : file.path.toLowerCase().endsWith('.png') 
+            ? 'image/png' 
+            : 'application/octet-stream',
+        onRemove: () async {
+          setState(() {
+            _uploadCancelled = true;
+            _uploadedFile = null;
+            _isUploading = false;
+          });
+        },
+      );
+    });
+
+    try {
+      final userId = context.read<AuthService>().currentUser?.id;
+      if (userId == null) {
+        throw Exception('User not logged in');
+      }
+
+      // Upload file
+      final fileResult = await _storageService.uploadFile(file, userId);
+      
+      // Check if upload was cancelled
+      if (_uploadCancelled) {
+        // Clean up the uploaded file from storage
+        await _storageService.deleteFile(fileResult.url);
+        return;
+      }
+
+      debugPrint('File uploaded successfully');
+      
+      if (mounted) {
+        // Update uploadedFile state with the uploaded file info
+        setState(() {
+          _isUploading = false;
+          _uploadedFile = FileUploadState(
+            fileName: fileResult.fileName,
+            fileSize: file.lengthSync(),
+            previewUrl: fileResult.url,
+            mimeType: fileResult.mimeType,
+            onRemove: () async {
+              if (_isUploading) {
+                setState(() {
+                  _uploadCancelled = true;
+                  _uploadedFile = null;
+                });
+              } else {
+                // Delete the file from storage when removed
+                await _storageService.deleteFile(fileResult.url);
+                setState(() => _uploadedFile = null);
+              }
+            },
+          );
+        });
+      }
+    } catch (e) {
+      debugPrint('Error processing file: $e');
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+          _uploadedFile = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to upload file: $e')),
+        );
+      }
+    }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  // Add this method to handle new chat actions
+  void _handleNewChat() {
+    setState(() {
+      _isNewChat = true;
+      _selectedChatId = 0;
+      context.read<ChatProvider>().clearCurrentChat();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final chatProvider = context.watch<ChatProvider>();
+    final messages = chatProvider.messages;
+
+    // Update _isAIResponding based on the last message
+    if (messages.isNotEmpty) {
+      final isTyping = messages.last['role'] == 'assistant_typing';
+      if (isTyping != _isAIResponding) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          setState(() {
+            _isAIResponding = isTyping;
+          });
+        });
+      }
+    }
+
     return Scaffold(
-      body: Stack(
-        children: [
-          // Main Chat Area
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  children: [
-                    // App Bar with menu button
-                    AppBar(
-                      leading: IconButton(
-                        icon: const Icon(Icons.menu),
-                        onPressed: _toggleSidebar,
-                      ),
-                      title: const Text('Chat'),
-                    ),
-                    // Messages List
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: _messages.length,
-                        itemBuilder: (context, index) {
-                          final message = _messages[index];
-                          return MessageBubble(
-                            message: message['content']!,
-                            isUser: message['role'] == 'user',
-                          );
-                        },
-                      ),
-                    ),
-                    
-                    // Loading Indicator
-                    if (_isLoading) const LinearProgressIndicator(),
-                    
-                    // Message Input
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.attach_file),
-                            onPressed: _handleImageSelection,
+      extendBody: true,
+      appBar: CustomAppBar(
+        onMenuPressed: () {},
+        onNewChatPressed: _handleNewChat,
+      ),
+      drawer: Builder(
+        builder: (context) => ChatSidebar(
+          onChatSelected: (chatId) {
+            if (chatId == 'new') {
+              _handleNewChat();
+            } else {
+              _handleChatSelected(chatId);
+            }
+            Navigator.pop(context);
+          },
+          selectedChatId: _selectedChatId,
+        ),
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+        ),
+        child: Stack(
+          children: [
+            // Welcome message and logo for new chat
+            if (_isNewChat)
+              Stack(
+                children: [
+                  // Welcome message and logo
+                  Positioned(
+                    top: 167.0, // Explicit positioning
+                    left: 30.0, // Align to the left
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Image.asset('assets/ai_avatar.png', height: 50),
+                        const SizedBox(height: 16),
+                        const Text(
+                          "Hi, I'm DeepSeek.",
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: kDarkGray,
                           ),
-                          Expanded(
-                            child: TextField(
-                              controller: _messageController,
-                              decoration: const InputDecoration(
-                                hintText: 'Type a message...',
-                                border: OutlineInputBorder(),
-                              ),
-                              onSubmitted: (_) => _sendMessage(),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          "How can I help you today?",
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: kPlaceholderGray,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Message input section
+                  Positioned(
+                    top: 320.0,
+                    left: 14.0,
+                    right: 14.0,
+                    child: Column(
+                      children: [
+                        if (!_isNewChat)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16.0),
+                            child: NewChatButton(
+                              onNewChat: _handleNewChat,
+                              clearCurrentChat: (provider) => provider.clearCurrentChat(),
                             ),
                           ),
-                          IconButton(
-                            onPressed: _sendMessage,
-                            icon: const Icon(Icons.send),
+                        Material(
+                          type: MaterialType.transparency,
+                          child: ChatInputSection(
+                            messageController: _messageController,
+                            isNewChat: _isNewChat,
+                            isSendEnabled: _isSendEnabled,
+                            onNewChat: _handleNewChat,
+                            onSendMessage: _sendMessage,
+                            onFileSelection: _handleImageSelection,
+                            onCameraCapture: _handleCameraCapture,
+                            onFilePicker: _handleFilePicker,
+                            clearCurrentChat: (provider) => provider.clearCurrentChat(),
+                            uploadedFile: _uploadedFile,
+                            isAIResponding: _isAIResponding,
+                            onStopResponse: _handleStopResponse,
                           ),
-                        ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+            // Main chat content
+            if (!_isNewChat)  // Only show this when not in new chat state
+              Column(
+                children: [
+                  Expanded(
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.only(bottom: 200),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final message = messages[index];
+                        return MessageBubble(
+                          message: message['content'],
+                          isUser: message['role'] == 'user',
+                          fileUrl: message['file_url'],
+                          mimeType: message['file_type'],
+                          fileName: message['file_name'],
+                          userEmail: context.read<AuthService>().currentUser?.email,
+                          isAssistant: message['role'] == 'assistant' || message['role'] == 'assistant_typing',
+                          isTyping: message['role'] == 'assistant_typing',
+                          messageId: message['id']?.toString(),
+                        );
+                      },
+                    ),
+                  ),
+                  
+                  // // New Chat Button
+                  // Padding(
+                  //   padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  //   child: NewChatButton(
+                  //     onNewChat: _handleNewChat,
+                  //     clearCurrentChat: (provider) => provider.clearCurrentChat(),
+                  //   ),
+                  // ),
+                  
+                  // Input Section for chat mode
+                  Material(
+                    type: MaterialType.transparency,
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: ChatInputSection(
+                        messageController: _messageController,
+                        isNewChat: _isNewChat,
+                        isSendEnabled: _isSendEnabled,
+                        onNewChat: _handleNewChat,
+                        onSendMessage: _sendMessage,
+                        onFileSelection: _handleImageSelection,
+                        onCameraCapture: _handleCameraCapture,
+                        onFilePicker: _handleFilePicker,
+                        clearCurrentChat: (provider) => provider.clearCurrentChat(),
+                        uploadedFile: _uploadedFile,
+                        isAIResponding: _isAIResponding,
+                        onStopResponse: _handleStopResponse,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
-
-          // Sidebar with gesture detection
-          if (_isSidebarVisible)
-            GestureDetector(
-              onTap: _toggleSidebar,
-              child: Container(
-                color: Colors.black54,
-                width: MediaQuery.of(context).size.width,
-                height: MediaQuery.of(context).size.height,
-              ),
-            ),
-
-          // Animated Sidebar
-          AnimatedBuilder(
-            animation: _animation,
-            builder: (context, child) {
-              return GestureDetector(
-                onHorizontalDragUpdate: (details) {
-                  if (details.delta.dx < -10 && _isSidebarVisible) {
-                    _toggleSidebar();
-                  } else if (details.delta.dx > 10 && !_isSidebarVisible) {
-                    _toggleSidebar();
-                  }
-                },
-                child: Transform.translate(
-                  offset: Offset(-260 * (1 - _animation.value), 0),
-                  child: child,
-                ),
-              );
-            },
-            child: ChatSidebar(
-              chatHistory: _chatHistory,
-              onChatSelected: _handleChatSelected,
-              selectedChatId: _selectedChatId,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

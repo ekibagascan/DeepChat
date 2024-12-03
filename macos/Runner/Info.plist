@@ -28,5 +28,11 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to take photos and videos for chat.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs photo library access to send images in chat.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs microphone access to record videos.</string>
 </dict>
 </plist>

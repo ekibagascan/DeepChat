@@ -12,17 +12,22 @@ dependencies:
   cupertino_icons: ^1.0.2
   http: ^1.1.0
   flutter_inappwebview: ^5.7.2
-  supabase_flutter: ^1.10.25
-  provider: ^6.0.5
+  supabase_flutter: ^2.3.2
+  provider: ^6.1.1
   shared_preferences: ^2.2.2
   intl: ^0.18.1
   flutter_dotenv: ^5.1.0
-  image_picker: ^1.0.4
+  image_picker: ^1.0.7
   path: ^1.8.3
   file_picker: ^6.1.1
   mime: ^1.0.4
   url_launcher: ^6.2.4
   open_file: ^3.3.2
+  google_sign_in: ^6.1.6
+  sign_in_with_apple: ^5.0.0
+  crypto: ^3.0.3
+  dio: ^5.3.3
+  cached_network_image: ^3.3.1
 
 dev_dependencies:
   flutter_test:
@@ -32,4 +37,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/google_logo.png
+    - assets/ai_avatar.png
     - .env

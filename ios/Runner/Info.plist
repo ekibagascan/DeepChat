@@ -45,5 +45,30 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.719357110390-8689nise0vq2b0tfd9n1noirtksmme13</string>
+			</array>
+		</dict>
+	</array>
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+	<key>GIDClientID</key>
+	<string>719357110390-8689nise0vq2b0tfd9n1noirtksmme13.apps.googleusercontent.com</string>
+	<key>GoogleSignInClientId</key>
+	<string>719357110390-8689nise0vq2b0tfd9n1noirtksmme13.apps.googleusercontent.com</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to take photos and videos for chat.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs photo library access to send images in chat.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs microphone access to record videos.</string>
 </dict>
 </plist>

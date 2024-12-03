@@ -3,25 +3,31 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/social_auth_service.dart';
 import 'chat_screen.dart';
-import 'signup_screen.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class SignupScreen extends StatefulWidget {
+  const SignupScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<SignupScreen> createState() => _SignupScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _SignupScreenState extends State<SignupScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isLoading = false;
   final _socialAuthService = SocialAuthService();
+  bool _isLoading = false;
 
-  Future<void> _login() async {
+  Future<void> _signUp() async {
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill in all fields')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
-      await context.read<AuthService>().signIn(
+      await context.read<AuthService>().signUp(
             email: _emailController.text,
             password: _passwordController.text,
           );
@@ -32,9 +38,11 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
     } finally {
       setState(() => _isLoading = false);
     }
@@ -43,14 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _signInWithGoogle() async {
     setState(() => _isLoading = true);
     try {
-      debugPrint('Starting Google Sign In...');
-      final response = await _socialAuthService.signInWithGoogle();
-      debugPrint('Google Sign In successful');
-      
-      if (response.user != null) {
-        context.read<AuthService>().updateCurrentUser(response.user!);
-      }
-      
+      await _socialAuthService.signInWithGoogle();
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -58,19 +59,13 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
-      debugPrint('Error during Google Sign In: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to sign in with Google: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(e.toString())),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      setState(() => _isLoading = false);
     }
   }
 
@@ -98,19 +93,21 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Login')),
+      appBar: AppBar(title: const Text('Sign Up')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const SizedBox(height: 32),
+            // Email & Password fields
             TextField(
               controller: _emailController,
               decoration: const InputDecoration(
                 labelText: 'Email',
                 border: OutlineInputBorder(),
               ),
+              keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 16),
             TextField(
@@ -123,10 +120,10 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: _isLoading ? null : _login,
+              onPressed: _isLoading ? null : _signUp,
               child: _isLoading
                   ? const CircularProgressIndicator()
-                  : const Text('Login'),
+                  : const Text('Sign Up'),
             ),
             const SizedBox(height: 32),
             const Text(
@@ -135,6 +132,7 @@ class _LoginScreenState extends State<LoginScreen> {
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 16),
+            // Social Sign In Buttons
             OutlinedButton.icon(
               onPressed: _isLoading ? null : _signInWithGoogle,
               icon: Image.asset(
@@ -150,12 +148,10 @@ class _LoginScreenState extends State<LoginScreen> {
               label: const Text('Continue with Apple'),
             ),
             const SizedBox(height: 24),
+            // Login Link
             TextButton(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SignupScreen()),
-              ),
-              child: const Text('Don\'t have an account? Sign up'),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Already have an account? Log in'),
             ),
           ],
         ),

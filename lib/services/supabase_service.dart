@@ -11,14 +11,9 @@ class SupabaseService {
         .from('chats')
         .select()
         .eq('user_id', userId)
-        .order('last_message_at', ascending: false)
-        .execute();
+        .order('last_message_at', ascending: false);
 
-    if (response.error != null) {
-      throw response.error!;
-    }
-
-    return List<Map<String, dynamic>>.from(response.data);
+    return List<Map<String, dynamic>>.from(response);
   }
 
   Future<String> createChat(String userId, String title) async {
@@ -29,14 +24,9 @@ class SupabaseService {
           'title': title,
         })
         .select()
-        .single()
-        .execute();
+        .single();
 
-    if (response.error != null) {
-      throw response.error!;
-    }
-
-    return response.data['id'];
+    return response['id'];
   }
 
   Future<List<Map<String, dynamic>>> getChatMessages(String chatId) async {
@@ -44,60 +34,48 @@ class SupabaseService {
         .from('messages')
         .select()
         .eq('chat_id', chatId)
-        .order('created_at')
-        .execute();
+        .order('created_at');
 
-    if (response.error != null) {
-      throw response.error!;
-    }
-
-    return List<Map<String, dynamic>>.from(response.data);
+    return List<Map<String, dynamic>>.from(response);
   }
 
   Future<void> saveMessage({
     required String chatId,
     required String role,
     required String content,
-    String? imageUrl,
+    String? fileUrl,
+    String? mimeType,
+    String? fileName,
   }) async {
     // Save message
-    final messageResponse = await _supabase
+    await _supabase
         .from('messages')
         .insert({
           'chat_id': chatId,
           'role': role,
           'content': content,
-          'image_url': imageUrl,
-        })
-        .execute();
-
-    if (messageResponse.error != null) {
-      throw messageResponse.error!;
-    }
+          'file_url': fileUrl,
+          'file_type': mimeType,
+          'file_name': fileName,
+        });
 
     // Update chat's last_message_at
-    final chatResponse = await _supabase
+    await _supabase
         .from('chats')
         .update({'last_message_at': DateTime.now().toIso8601String()})
-        .eq('id', chatId)
-        .execute();
-
-    if (chatResponse.error != null) {
-      throw chatResponse.error!;
-    }
+        .eq('id', chatId);
   }
 
-  // Existing methods...
+  // User Methods
   Future<UserModel?> getUser(String userId) async {
     final response = await _supabase
         .from('users')
         .select()
         .eq('id', userId)
-        .single()
-        .execute();
+        .single();
     
-    if (response.data != null) {
-      return UserModel.fromJson(response.data);
+    if (response != null) {
+      return UserModel.fromJson(response);
     }
     return null;
   }
@@ -106,14 +84,12 @@ class SupabaseService {
     await _supabase
         .from('users')
         .update({'subscription_status': status})
-        .eq('id', userId)
-        .execute();
+        .eq('id', userId);
   }
 
   Future<void> createSubscription(SubscriptionModel subscription) async {
     await _supabase
         .from('subscriptions')
-        .insert(subscription.toJson())
-        .execute();
+        .insert(subscription.toJson());
   }
 } 

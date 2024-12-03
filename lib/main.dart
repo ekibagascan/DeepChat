@@ -4,6 +4,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 import 'screens/login_screen.dart';
 import 'services/auth_service.dart';
+import 'providers/chat_provider.dart';
+import 'services/supabase_service.dart';
+import 'api/deepseek_api.dart';
+import 'screens/settings_screen.dart';
+import 'screens/subscription_screen.dart';
+import 'screens/chat_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +34,12 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
+        ChangeNotifierProvider(
+          create: (_) => ChatProvider(
+            supabaseService: SupabaseService(),
+            deepSeekAPI: DeepSeekAPI(),
+          ),
+        ),
       ],
       child: MaterialApp(
         title: 'DeepChat App',
@@ -36,6 +48,13 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
         ),
         home: const LoginScreen(),
+        initialRoute: '/login',
+        routes: {
+          '/login': (context) => const LoginScreen(),
+          '/chat': (context) => const ChatScreen(),
+          '/settings': (context) => const SettingsScreen(),
+          '/subscription': (context) => const SubscriptionScreen(),
+        },
       ),
     );
   }
